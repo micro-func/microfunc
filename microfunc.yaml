@@ -1,0 +1,270 @@
+version: '1.2'
+
+# Definicja źródeł plików dla projektu
+sources:
+  # Źródła lokalne
+  local:
+    # Pliki konfiguracyjne
+    config_files:
+      path: "./config"
+      files:
+        - "app_config.json"
+        - "logging.yaml"
+    
+    # Funkcje lokalne
+    functions:
+      path: "./functions"
+      files:
+        - "printer_service.py"
+        - "web_label_server.py"
+  
+  # Źródła z repozytoriów Git
+  git:
+    common_lib:
+      url: "https://github.com/org/common-grpc-lib.git"
+      branch: "main"
+      path: "src/functions"
+      files:
+        - "auth.py"
+        - "utils.py"
+  
+  # Źródła generowane przez LLM w czasie rzeczywistym
+  llm:
+    # Konfiguracja połączenia z API modelu
+    provider: "openai"
+    model: "gpt-4"
+    api_key_env: "OPENAI_API_KEY"
+    
+    # Generowane funkcje
+    generated_functions:
+      path: "./llm_generated/functions"
+      prompts:
+        data_validator:
+          output_file: "data_validator.py"
+          prompt: |
+            Stwórz funkcję Python o nazwie 'validate_data', która przyjmie jako parametr słownik z danymi 
+            etykiety (zawierający pola: content, size, copies, barcode) i zweryfikuje poprawność wartości.
+          parameters:
+            temperature: 0.2
+            max_tokens: 1000
+
+# Konfiguracja certyfikatów dla bezpiecznej komunikacji
+certificates:
+  main:
+    cert_file: "./certs/server.crt"
+    key_file: "./certs/server.key"
+    
+  auto_generated:
+    domain: "api.example.com"
+    email: "admin@example.com"
+    provider: "letsencrypt"
+    output_dir: "./certs/generated"
+
+# Lista zadań do wykonania (nowa sekcja)
+tasks:
+  # Zadania oznaczone jako manualne muszą być wykonane przez człowieka
+  manual:
+    - id: "configure-printers"
+      title: "Konfiguracja drukarek fizycznych"
+      description: "Skonfiguruj drukarki termiczne w systemie operacyjnym i sprawdź połączenie."
+      assignee: "admin@example.com"
+      due_date: "2025-03-15"
+      status: "pending"  # pending, in_progress, completed, blocked
+      priority: "high"   # low, medium, high, critical
+      tags: ["hardware", "configuration"]
+      prerequisites: []
+      
+    - id: "create-label-templates"
+      title: "Stworzenie szablonów etykiet"
+      description: "Zaprojektuj 3 podstawowe szablony etykiet: produktowe, wysyłkowe i informacyjne."
+      assignee: "designer@example.com"
+      due_date: "2025-03-10"
+      status: "in_progress"
+      priority: "medium"
+      tags: ["design", "templates"]
+      prerequisites: []
+  
+  # Zadania automatyczne mogą być wykonane przez boty lub systemy CI/CD
+  automated:
+    - id: "generate-test-data"
+      title: "Generowanie danych testowych"
+      description: "Wygeneruj zestaw testowych etykiet do testowania systemu."
+      executor: "data-generator-bot"
+      schedule: "0 0 * * *"  # Codziennie o północy (format cron)
+      status: "pending"
+      priority: "medium"
+      tags: ["testing", "data"]
+      script: "./scripts/generate_test_data.py"
+      parameters:
+        count: 100
+        types: ["product", "shipping", "info"]
+      
+    - id: "run-performance-tests"
+      title: "Uruchomienie testów wydajnościowych"
+      description: "Wykonaj testy wydajnościowe usług gRPC pod obciążeniem."
+      executor: "ci-pipeline"
+      trigger: "on_deploy"  # on_deploy, on_commit, scheduled
+      status: "pending"
+      priority: "high"
+      tags: ["testing", "performance"]
+      script: "./scripts/run_performance_tests.sh"
+      parameters:
+        concurrent_users: 50
+        duration_minutes: 10
+        services: ["printer-service", "label-formatter-service"]
+
+# Konfiguracja komunikacji (nowa sekcja)
+communication:
+  # Konfiguracja webhooków do powiadamiania o zdarzeniach
+  webhooks:
+    - id: "slack-notifications"
+      url: "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
+      events: ["service.start", "service.stop", "task.completed", "error"]
+      format: "json"
+      headers:
+        Content-Type: "application/json"
+        Authorization: "Bearer ${SLACK_API_TOKEN}"
+    
+    - id: "jira-integration"
+      url: "https://your-domain.atlassian.net/rest/api/3/issue"
+      events: ["task.created", "task.status_changed"]
+      format: "json"
+      headers:
+        Content-Type: "application/json"
+        Authorization: "Basic ${JIRA_AUTH_TOKEN}"
+  
+  # Konfiguracja API do komunikacji z innymi systemami
+  apis:
+    - id: "inventory-system"
+      type: "rest"
+      base_url: "https://inventory.example.com/api/v1"
+      auth_type: "oauth2"
+      auth_config:
+        client_id: "${INVENTORY_CLIENT_ID}"
+        client_secret: "${INVENTORY_CLIENT_SECRET}"
+        token_url: "https://inventory.example.com/oauth/token"
+      endpoints:
+        - path: "/products"
+          method: "GET"
+          description: "Pobieranie listy produktów"
+        - path: "/products/{product_id}/labels"
+          method: "POST"
+          description: "Generowanie etykiety dla produktu"
+    
+    - id: "shipping-service"
+      type: "grpc"
+      host: "shipping.example.com"
+      port: 50055
+      use_tls: true
+      proto_file: "./proto/shipping_service.proto"
+      service_name: "ShippingService"
+      methods:
+        - name: "CreateShipment"
+          description: "Tworzenie przesyłki"
+        - name: "GetShippingLabel"
+          description: "Pobieranie etykiety wysyłkowej"
+
+# Definicja usług gRPC
+services:
+  # Usługa drukowania etykiet
+  printer-service:
+    function: 
+      source: "local.functions"
+      name: "printer_service.py"
+    
+    grpc:
+      port: 50051
+      service_name: "PrintLabelService"
+      proto_package: "print_label"
+      tls:
+        enabled: true
+        cert: "main"
+    
+    http:
+      enabled: true
+      port: 8080
+      tls:
+        enabled: true
+        cert: "main"
+    
+    environment:
+      DEBUG: 'true'
+      PRINTER_DEVICES_PATH: '/dev/usb'
+      DEFAULT_PRINTER: 'lp0'
+    
+    volumes:
+      - '/dev/usb:/dev/usb:ro'
+    
+    depends_on: []
+  
+  # Nowa usługa: Walidator danych etykiet wygenerowany przez LLM
+  data-validator-service:
+    function:
+      source: "llm.generated_functions"
+      name: "data_validator.py"
+    
+    grpc:
+      port: 50053
+      service_name: "DataValidatorService"
+      proto_package: "data_validator"
+      tls:
+        enabled: true
+        cert: "main"
+    
+    http:
+      enabled: true
+      port: 8082
+      tls:
+        enabled: true
+        cert: "main"
+    
+    environment:
+      VALIDATION_RULES_PATH: './llm_generated/config/validation_rules.json'
+    
+    depends_on:
+      - printer-service
+
+# Konfiguracja globalnych ustawień
+global:
+  project_name: "printer-system"
+  
+  # Katalog, w którym będą generowane pliki usług
+  output_dir: "./generated"
+  
+  # Konfiguracja logowania
+  logging:
+    level: "INFO"
+    path: "./logs"
+  
+  # Ustawienia rejestru funkcji
+  registry:
+    path: "./.registry"
+  
+  # Ustawienia odkrywania usług
+  discovery:
+    enabled: true
+    port: 50050
+  
+  # Konfiguracja integracji z LLM
+  llm_integration:
+    cache_dir: "./.llm_cache"
+    cache_ttl: 86400  # 24 godziny w sekundach
+    refresh_on_build: true  # Czy odświeżać wygenerowane pliki przy każdym budowaniu
+    fallback_mode: "use_cached"  # Tryb awaryjny w przypadku niedostępności API: use_cached, fail
+  
+  # Ustawienia menedżera zadań (nowa sekcja)
+  task_manager:
+    enabled: true
+    storage: "./tasks.db"  # Plik SQLite do przechowywania zadań
+    notify_assignees: true  # Powiadamianie przypisanych osób o zmianach
+    auto_update_status: true  # Automatyczna aktualizacja statusów zadań
+    
+    # Integracje zewnętrzne dla zadań
+    integrations:
+      github:
+        enabled: true
+        repository: "org/project"
+        sync_issues: true
+      jira:
+        enabled: false
+        project_key: "GRPC"
